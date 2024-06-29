@@ -57,7 +57,7 @@ def format_exception(e, regular=True):
     proj_frame = get_path_frame(e, proj_path)
     if proj_frame:
         proj_frame_path = Path(proj_frame.filename).relative_to(proj_path)
-        prompt += f"\n  P {proj_frame_path}, L {proj_frame.lineno}, F {proj_frame.name}:"
+        prompt += f"\n  P {proj_frame_path}:{proj_frame.lineno}, F {proj_frame.name}:"
         prompt += f"\n    {proj_frame.line.strip()}"
     last_frame = get_last_frame(e)
     if last_frame:
@@ -66,7 +66,7 @@ def format_exception(e, regular=True):
             if Path(p) in Path(last_frame.filename).parents:
                 last_frame_path = "<SP>/" + str(Path(last_frame.filename).relative_to(p))
                 break
-        prompt += f"\n  S {last_frame_path}, L {last_frame.lineno}, F {last_frame.name}:"
+        prompt += f"\n  S {last_frame_path}:{last_frame.lineno}, F {last_frame.name}:"
         prompt += f"\n    {last_frame.line.strip()}"
     prompt += f"\n    E {get_cls_fullpath(type(e))}: {e}\n"
     return prompt
@@ -291,7 +291,27 @@ def next_random_datetime(start_time: time = None, end_time: time = None, interva
     return t
 
 
-def humanbytes(B: float):
+def format_timedelta_human(delta):
+    """将时间差转换为人类可读形式."""
+    d = delta.days
+    h, s = divmod(delta.seconds, 3600)
+    m, s = divmod(s, 60)
+    labels = ["天", "小时", "分钟", "秒"]
+    dhms = ["%s %s%s" % (i, lbl, "s" if i != 1 else "") for i, lbl in zip([d, h, m, s], labels)]
+    for start in range(len(dhms)):
+        if not dhms[start].startswith("0"):
+            break
+    for end in range(len(dhms) - 1, -1, -1):
+        if not dhms[end].startswith("0"):
+            break
+    parts = dhms[start : end + 1]
+    if not parts:
+        return "0 秒"
+    else:
+        return ", ".join(parts)
+
+
+def format_byte_human(B: float):
     """将字节数转换为人类可读形式."""
     B = float(B)
     KB = float(1024)

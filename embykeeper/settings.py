@@ -80,6 +80,7 @@ def check_config(config):
                         Optional("continuous"): bool,
                         Optional("jellyfin"): bool,
                         Optional("ua"): str,
+                        Optional("allow_multiple"): bool,
                     }
                 )
             ],
@@ -213,39 +214,11 @@ def write_faked_config(path, quiet=False):
         t["time"].comment("模拟观看的时长范围 (秒)")
         emby.append(t)
     doc["emby"] = emby
-    with open(path, "w+", encoding="utf-8") as f:
-        dump(doc, f)
-
-
-def encrypt(data: str, password: str):
-    """对数据进行密码加密."""
-    from Crypto.Cipher import AES
-    from Crypto import Random
-
-    bs = AES.block_size
-    pad = lambda s: s + (bs - len(s) % bs) * chr(bs - len(s) % bs)
-    iv = Random.new().read(bs)
-    padpass = hashlib.md5(password.encode()).hexdigest().encode()
-    cipher = AES.new(padpass, AES.MODE_CBC, iv)
-    data = cipher.encrypt(pad(data).encode())
-    data = iv + data
-    return data
-
-
-def decrypt(data: bytes, password: str):
-    """对数据进行密码解密."""
-
-    from Crypto.Cipher import AES
-
-    bs = AES.block_size
-    if len(data) <= bs:
-        return data.decode()
-    unpad = lambda s: s[0 : -ord(s[-1:])]
-    iv = data[:bs]
-    padpass = hashlib.md5(password.encode()).hexdigest().encode()
-    cipher = AES.new(padpass, AES.MODE_CBC, iv)
-    data = unpad(cipher.decrypt(data[bs:]))
-    return data.decode()
+    if isinstance(path, (str, Path)):
+        with open(path, "w+", encoding="utf-8") as f:
+            dump(doc, f)
+    else:
+        dump(doc, path)
 
 
 async def interactive_config(config: dict = {}, basedir=None):
@@ -261,6 +234,7 @@ async def interactive_config(config: dict = {}, basedir=None):
     logger.info("我们将为您生成配置, 需要您根据提示填入信息, 并按回车确认.")
     logger.info(f"配置帮助详见: {__url__}.")
     logger.info(f"若需要重新开始, 请点击右上方的刷新按钮.")
+    logger.info(f"若您需要更加高级的配置, 请使用右上角的 Config 按钮以修改配置文件.")
     telegrams = config.get("telegram", [])
     while True:
         if len(telegrams) > 0:
@@ -358,18 +332,10 @@ async def interactive_config(config: dict = {}, basedir=None):
             show_default=True,
             console=console,
         )
-    content = item(config).as_string()
-    enc = Confirm.ask(pad + "是否生成加密配置", default=False, console=console)
-    if enc:
-        enc_password = Prompt.ask(
-            pad + "请输入加密密码, 程序启动时将要求输入 (不显示, 按回车确认)", password=True, console=console
-        )
-        content = encrypt(content, enc_password)
-    else:
-        content = content.encode()
+    content = item(config).as_string().encode()
     content = base64.b64encode(content)
     logger.info(
-        f"您的配置[green]已生成完毕[/]! 您需要将以下内容写入环境变量配置 (名称: EK_CONFIG), 否则配置将在重启后丢失."
+        f"您的配置[green]已生成完毕[/]! 您需要将以下内容写入托管平台的 EK_CONFIG 环境变量 ([red]SECRET[/]), 否则配置将在重启后丢失."
     )
     print()
     get_console().rule("EK_CONFIG")
@@ -383,29 +349,13 @@ async def interactive_config(config: dict = {}, basedir=None):
 
 def load_env_config(data: str):
     """从来自环境变量的加密数据读入配置."""
-    from rich.prompt import Prompt
 
     data = base64.b64decode(re.sub(r"\s+", "", data).encode())
     try:
         config = tomllib.loads(data.decode())
     except (tomllib.TOMLDecodeError, UnicodeDecodeError):
-        try:
-            logger.info("您正在使用加密配置文件作为输入 (AES).")
-            config = tomllib.loads(
-                decrypt(
-                    data,
-                    Prompt.ask(
-                        " " * 23 + "您需要输入您的加密密钥 (不显示, 按回车确认)",
-                        password=True,
-                        console=console,
-                    ),
-                )
-            )
-        except (tomllib.TOMLDecodeError, UnicodeDecodeError):
-            config = {}
-        if not config:
-            logger.error("密钥无效或配置格式错误, 请重试.")
-            sys.exit(252)
+        logger.error("配置格式错误, 请调整并重试.")
+        sys.exit(252)
     else:
         logger.debug("您正在使用环境变量配置.")
     return config
@@ -421,7 +371,10 @@ async def prepare_config(config_file=None, basedir=None, public=False, windows=F
     config = {}
     basedir = Path(basedir or user_data_dir(__product__))
     basedir.mkdir(parents=True, exist_ok=True)
-    logger.debug(f'工作目录: "{basedir}".')
+    if public:
+        logger.info(f'工作目录: "{basedir}"')
+    else:
+        logger.info(f'工作目录: "{basedir}", 您的用户数据相关文件将存储在此处, 请妥善保管.')
     env_config = os.environ.get(f"EK_CONFIG", None)
     if env_config:
         config = load_env_config(env_config)

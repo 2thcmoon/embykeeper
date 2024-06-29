@@ -10,7 +10,7 @@ aiofiles
 aiohttp
 aiohttp-socks
 python-dateutil
-ddddocrfix
+ddddocr>=1.5.5
 embypyfix
 pyrogram
 tgcrypto
@@ -18,7 +18,6 @@ pillow>10.0.0
 thefuzz[speedup]
 schema
 aiocache
-pycryptodome
 flask==3.0.3
 flask-socketio==5.3.6
 flask-login==0.6.3
@@ -28,3 +27,4 @@ cryptography
 werkzeug==3.0.3
 cachetools
 emoji
+numpy<2.0.0

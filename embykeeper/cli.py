@@ -20,9 +20,22 @@ app = AsyncTyper(
 )
 
 
-def version(version):
-    if version:
+def version(flag):
+    if flag:
         print(__version__)
+        raise typer.Exit()
+
+
+def print_example_config(flag):
+    if flag:
+        import io
+
+        from .settings import write_faked_config
+
+        file = io.StringIO()
+        write_faked_config(file, quiet=True)
+        file.seek(0)
+        print(file.read())
         raise typer.Exit()
 
 
@@ -66,6 +79,15 @@ async def main(
         is_eager=True,
         help=f"打印 {__name__.capitalize()} 版本",
     ),
+    example_config: bool = typer.Option(
+        None,
+        "--example-config",
+        "-E",
+        hidden=True,
+        callback=print_example_config,
+        is_eager=True,
+        help=f"输出范例配置文件",
+    ),
     instant: bool = typer.Option(
         True,
         "--instant/--no-instant",
@@ -98,15 +120,16 @@ async def main(
     simple_log: bool = typer.Option(
         False, "--simple-log", "-L", rich_help_panel="调试参数", help="简化日志输出格式"
     ),
+    disable_color: bool = typer.Option(
+        False, "--disable-color", "-C", rich_help_panel="调试参数", help="禁用日志颜色"
+    ),
     follow: bool = typer.Option(False, "--follow", "-F", rich_help_panel="调试工具", help="仅启动消息调试"),
     analyze: bool = typer.Option(
         False, "--analyze", "-A", rich_help_panel="调试工具", help="仅启动历史信息分析"
     ),
-    dump: List[str] = typer.Option(
-        [], "--dump", "-D", hidden=True, rich_help_panel="调试工具", help="仅启动更新日志"
-    ),
+    dump: List[str] = typer.Option([], "--dump", "-D", rich_help_panel="调试工具", help="仅启动更新日志"),
     save: bool = typer.Option(
-        False, "--save", "-S", hidden=True, rich_help_panel="调试参数", help="记录原始更新日志"
+        False, "--save", "-S", rich_help_panel="调试参数", help="记录执行过程中的原始更新日志"
     ),
     public: bool = typer.Option(
         False, "--public", "-P", hidden=True, rich_help_panel="调试参数", help="启用公共仓库部署模式"
@@ -115,7 +138,7 @@ async def main(
         False, "--windows", "-W", hidden=True, rich_help_panel="调试参数", help="启用 Windows 安装部署模式"
     ),
     basedir: Path = typer.Option(
-        None, "--basedir", "-B", rich_help_panel="调试参数", help="设定输出文件位置"
+        None, "--basedir", "-B", rich_help_panel="调试参数", help="设定账号文件和模型文件的位置"
     ),
 ):
     from .log import logger, initialize
@@ -125,7 +148,10 @@ async def main(
         level = "DEBUG"
     else:
         level = "INFO"
+
     initialize(level=level, show_path=verbosity and (not simple_log), show_time=not simple_log)
+    if disable_color:
+        var.console.no_color = True
 
     msg = " 您可以通过 Ctrl+C 以结束运行." if not public else ""
     logger.info(f"欢迎使用 [orange3]{__name__.capitalize()}[/]! 正在启动, 请稍等.{msg}")
@@ -220,10 +246,15 @@ async def main(
         if emby:
             if debug_cron:
                 start_time = end_time = (datetime.now() + timedelta(seconds=10)).time()
-                pool.add(watcher_schedule(config, start_time=start_time, end_time=end_time, days=0))
+                pool.add(
+                    watcher_schedule(config, start_time=start_time, end_time=end_time, days=0, debug=True)
+                )
             else:
                 pool.add(watcher_schedule(config, days=emby))
-            pool.add(watcher_continuous_schedule(config))
+            for a in config.get("emby", ()):
+                if a.get("continuous", False):
+                    pool.add(watcher_continuous_schedule(config))
+                    break
         if checkin:
             if debug_cron:
                 start_time = end_time = (datetime.now() + timedelta(seconds=10)).time()
